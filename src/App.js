@@ -832,11 +832,15 @@ const buildChartDataSets = (analysisData) => {
 
 
 
+
 const App = () => {
   const [phase, setPhase] = useState('upload');
   const [connectionMethod, setConnectionMethod] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
+  const [availableYears, setAvailableYears] = useState([]);
+  const [selectedYear, setSelectedYear] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [transcript, setTranscript] = useState(null);
   const [currentChartIndex, setCurrentChartIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const [error, setError] = useState(null);
@@ -853,25 +857,53 @@ const App = () => {
       console.warn('No file selected when attempting upload.');
       return;
     }
-    
-    console.log('Starting file upload and analysis...');
+
+    console.log('Starting file read and available-years fetch...');
     setPhase('loading');
     const reader = new FileReader();
 
     reader.onload = async (ev) => {
       try {
-        console.log('File read successful, sending to /analyze');
-        const response = await fetch(`${analysisApiUrl}/analyze`, {
+        const fileTranscript = ev.target.result;
+        setTranscript(fileTranscript);
+
+        // Fetch available years
+        const yearsResponse = await fetch(`${analysisApiUrl}/available-years`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: ev.target.result })
+          body: JSON.stringify({ transcript: fileTranscript })
         });
-        
-        if (!response.ok) throw new Error('Analysis fetch not ok');
 
-        const json = await response.json();
-        console.log('Analysis data received:', json);
-        setAnalysisData(json);
+        if (!yearsResponse.ok) throw new Error('Available years fetch not ok');
+
+        const yearsJson = await yearsResponse.json();
+        console.log('Available years received:', yearsJson.available_years);
+
+        console.log('Full response:', yearsJson);
+        console.log('Type of yearsJson.available_years:', typeof yearsJson.available_years);
+        console.log('Is array?', Array.isArray(yearsJson.available_years));
+        
+        if (!yearsJson.available_years || !Array.isArray(yearsJson.available_years) || yearsJson.available_years.length === 0) {
+          throw new Error('No available years found');
+        }
+
+        setAvailableYears(yearsJson.available_years);
+        const initialYear = yearsJson.available_years[0];
+        setSelectedYear(initialYear);
+
+        // Now fetch the analysis for the initial year
+        const analyzeResponse = await fetch(`${analysisApiUrl}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: fileTranscript, wrapped_year: initialYear })
+        });
+
+        if (!analyzeResponse.ok) throw new Error('Initial analysis fetch not ok');
+
+        const analysisJson = await analyzeResponse.json();
+        console.log('Initial analysis data received:', analysisJson);
+
+        setAnalysisData(analysisJson);
         setPhase('visualize');
         setCurrentChartIndex(0);
       } catch (error) {
@@ -890,28 +922,29 @@ const App = () => {
     reader.readAsText(selectedFile);
   };
 
-  const handleWhatsAppChat = async (sessionId, chatId) => {
-    console.log('Analyzing WhatsApp chat:', { sessionId, chatId });
+  const handleYearChange = async (year) => {
+    console.log('Year selected:', year);
+    setSelectedYear(year);
     setPhase('loading');
 
     try {
-      const response = await fetch('http://localhost:3001/analyze-whatsapp-chat', {
+      const response = await fetch(`${analysisApiUrl}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, chatId })
+        body: JSON.stringify({ transcript, year })
       });
 
-      if (!response.ok) throw new Error('WhatsApp analysis fetch not ok');
-      
+      if (!response.ok) throw new Error('Failed to fetch analysis data for year');
+
       const json = await response.json();
-      console.log('WhatsApp analysis data received:', json);
+      console.log('Analysis data for selected year:', json);
       setAnalysisData(json);
       setPhase('visualize');
       setCurrentChartIndex(0);
     } catch (error) {
-      console.error('WhatsApp analysis error:', error);
-      setError('Analysis failed');
-      setPhase('upload');
+      console.error('Error fetching data for year:', error);
+      setError('Failed to fetch data for year');
+      setPhase('error');
     }
   };
 
@@ -922,17 +955,17 @@ const App = () => {
     if (!chartDataSets.length) return;
 
     setIsScrolling(true);
-    
+
     if (e.deltaY > 0 && currentChartIndex < chartDataSets.length - 1) {
-      setCurrentChartIndex(prev => prev + 1);
+      setCurrentChartIndex((prev) => prev + 1);
     } else if (e.deltaY < 0 && currentChartIndex > 0) {
-      setCurrentChartIndex(prev => prev - 1);
+      setCurrentChartIndex((prev) => prev - 1);
     }
 
     setTimeout(() => setIsScrolling(false), 700);
   };
 
-  // Phase-based rendering:
+  // Render logic
   if (phase === 'upload') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
@@ -942,12 +975,14 @@ const App = () => {
               {error}
             </div>
           )}
-
           <h1 className="text-3xl font-bold text-center mb-8">Groupchat Wrapped 2024</h1>
-          <img src = "/giftbox_opening.gif"></img>
+          <img src="/giftbox_opening.gif" alt="Opening Giftbox" />
           {!connectionMethod ? (
             <div className="space-y-0">
-              <p className="text-gray-600 mb-8 p-1" align = "center">It's been quite a year huh? Let's review! To get started, click the button below import your groupchat data. Don't worry - we won't save anything beyond this session.</p>
+              <p className="text-gray-600 mb-8 p-1" align="center">
+                It's been quite a year huh? Let's review! To get started, click the button below to import your groupchat data.
+                Don't worry - we won't save anything beyond this session.
+              </p>
               <button
                 onClick={() => setConnectionMethod('file')}
                 className="w-full p-6 text-left border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
@@ -955,8 +990,8 @@ const App = () => {
                 <h2 className="text-xl font-semibold mb-2">Upload Chat File</h2>
                 <p className="text-gray-600">Export your chat from WhatsApp and upload the file</p>
               </button>
-              </div>)
-          : (
+            </div>
+          ) : (
             <div>
               <button
                 onClick={() => {
@@ -967,10 +1002,18 @@ const App = () => {
               >
                 ← Back to options
               </button>
-
               {connectionMethod === 'file' ? (
                 <div className="space-y-4">
-                  <p className="text-gray-600" align = "center"><a href="https://faq.whatsapp.com/1180414079177245/?cms_platform=iphone&helpref=platform_switcher&locale=en_US" target = "_blank">To learn how to export your chat history from WhatsApp, click here.</a> You don't need to attach media.</p>
+                  <p className="text-gray-600" align="center">
+                    <a
+                      href="https://faq.whatsapp.com/1180414079177245/?cms_platform=iphone&helpref=platform_switcher&locale=en_US"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      To learn how to export your chat history from WhatsApp, click here.
+                    </a>{' '}
+                    You don't need to attach media.
+                  </p>
                   <label className="block w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-blue-500 transition-colors">
                     <input
                       type="file"
@@ -979,10 +1022,9 @@ const App = () => {
                       className="hidden"
                     />
                     <span className="text-gray-600">
-                      {selectedFile ? selectedFile.name : "Drop your WhatsApp chat file here or click to browse"}
+                      {selectedFile ? selectedFile.name : 'Drop your WhatsApp chat file here or click to browse'}
                     </span>
                   </label>
-                  
                   {selectedFile && (
                     <button
                       onClick={handleFileUpload}
@@ -1003,34 +1045,17 @@ const App = () => {
   }
 
   if (phase === 'loading') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex flex-col items-center justify-center">
-        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-        <h2 className="text-xl font-medium text-gray-700">Analyzing your chat...</h2>
-      </div>
-    );
-  }
-
-  if (phase === 'error') {
+    // Show a loading screen while waiting for available-years or analyze calls
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 max-w-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-            <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1.293-5.293a1 
-              1 0 011.414 0L10 13.586l1.293-1.293a1 1 0 011.414 1.414L11.414 
-              15l1.293 1.293a1 1 0 01-1.414 1.414L10 16.414l-1.293 
-              1.293a1 1 0 01-1.414-1.414L8.586 15l-1.293-1.293a1 1 0 
-              010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">
-                There was an error analyzing your chat. Please try again.
-              </p>
-            </div>
-          </div>
+        <div className="text-center">
+          <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-4" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10"
+                    stroke="currentColor" strokeWidth="4" fill="none"/>
+            <path className="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8H4z"/>
+          </svg>
+          <p className="text-indigo-600">Loading...</p>
         </div>
       </div>
     );
@@ -1045,86 +1070,73 @@ const App = () => {
             <div className="flex">
               <div className="flex-shrink-0">
                 <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  <path
+                    fillRule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </div>
               <div className="ml-3">
-                <p className="text-sm text-yellow-700">
-                  No data available for visualization
-                </p>
+                <p className="text-sm text-yellow-700">No data available for visualization</p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-   
+
     const safeCurrentIndex = Math.max(0, Math.min(currentChartIndex, chartDataSets.length - 1));
     const currentItem = chartDataSets[safeCurrentIndex];
     const showScrollIndicator = safeCurrentIndex < chartDataSets.length - 1;
-   
+
     return (
-      <div 
-        className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-8"
-        onWheel={handleScroll}
-      >
-        {/* Position indicator */}
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-8" onWheel={handleScroll}>
+        <div className="fixed top-4 left-4 bg-white/80 backdrop-blur-sm rounded-lg p-2 shadow">
+          <label htmlFor="yearDropdown" className="block text-sm font-medium text-gray-700">
+            Select Year:
+          </label>
+          <select
+            id="yearDropdown"
+            value={selectedYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+            className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          >
+            {availableYears.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="fixed top-4 right-4 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 text-sm text-gray-600">
           {safeCurrentIndex + 1} of {chartDataSets.length}
         </div>
-   
-        {/* Content */}
         <div className="w-full">
           {currentItem && (
-            currentItem.type === "SummaryGrid" ? (
-              <DaySummariesGrid 
-                summaries={currentItem.summaries}
-                isVisible={true}
-              />
+            currentItem.type === 'SummaryGrid' ? (
+              <DaySummariesGrid summaries={currentItem.summaries} isVisible />
             ) : currentItem.data ? (
-              <AnimatedChart 
-                chart={currentItem}
-                isVisible={true}
-                index={safeCurrentIndex}
-              />
-            ) : currentItem.type === "TextSummaryCard" ? (
-              <TextSummaryCard
-                title = {currentItem.title}
-                summary={currentItem.summary}
-                isVisible={true}
-                />
-
+              <AnimatedChart chart={currentItem} isVisible index={safeCurrentIndex} />
+            ) : currentItem.type === 'TextSummaryCard' ? (
+              <TextSummaryCard title={currentItem.title} summary={currentItem.summary} isVisible />
             ) : null
           )}
         </div>
-   
-        {/* Scroll indicator */}
-        {showScrollIndicator && (
-          <div className="fixed right-12 top-1/2 -translate-y-1/2 flex flex-col items-center animate-fade-in">
-            <div className="animate-bounce flex flex-col items-center">
-              <svg 
-                width="24" 
-                height="24" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className="text-blue-500"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <polyline points="19 12 12 19 5 12"></polyline>
-              </svg>
-              <p className="text-sm font-medium text-gray-500 mt-2">Scroll Down</p>
-            </div>
-          </div>
-        )}
+        {showScrollIndicator && <ScrollIndicator showIndicator />}
       </div>
     );
-   }
+  }
 
-  // If none of the phases matched, show an error
+  if (phase === 'error') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-red-50 text-red-700">
+        <p>{error || 'An error occurred.'}</p>
+      </div>
+    );
+  }
+
+  // If we ever get here, something unexpected truly happened.
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-red-50 text-red-700">
       <p>Unexpected state. Please reload the page.</p>
