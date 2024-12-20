@@ -27,7 +27,7 @@ ChartJS.register(
   Legend
 );
 
-const analysisApiUrl = process.env.ANALYSIS_API_URL;
+const analysisApiUrl = 'https://groupchat-wrapped-analysis.fly.dev/';
 
 // ScrollIndicator component
 const ScrollIndicator = ({ showIndicator }) => {
