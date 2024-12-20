@@ -895,7 +895,7 @@ const App = () => {
         const analyzeResponse = await fetch(`${analysisApiUrl}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: fileTranscript, wrapped_year: initialYear })
+          body: JSON.stringify({ transcript: fileTranscript, year: initialYear })
         });
 
         if (!analyzeResponse.ok) throw new Error('Initial analysis fetch not ok');
