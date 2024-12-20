@@ -1035,7 +1035,7 @@ const App = () => {
                   )}
                 </div>
               ) : (
-                <WhatsAppConnector onChatSelected={handleWhatsAppChat} />
+                null
               )}
             </div>
           )}
