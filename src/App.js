@@ -887,6 +887,7 @@ const App = () => {
   const [currentChartIndex, setCurrentChartIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const [error, setError] = useState(null);
+  const [createAiSummaries, setCreateAiSummaries] = useState(true);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [dayLogs, setDayLogs] = useState([]);
@@ -941,7 +942,7 @@ const App = () => {
         const analyzeResponse = await fetch(`${analysisApiUrl}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: fileTranscript, year: initialYear })
+          body: JSON.stringify({ transcript: fileTranscript, year: initialYear, create_ai_summaries: createAiSummaries })
         });
 
         if (!analyzeResponse.ok) throw new Error('Initial analysis fetch not ok');
@@ -977,7 +978,7 @@ const App = () => {
       const response = await fetch(`${analysisApiUrl}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, year })
+        body: JSON.stringify({ transcript, year, create_ai_summaries: createAiSummaries })
       });
 
       if (!response.ok) throw new Error('Failed to fetch analysis data for year');
@@ -1094,6 +1095,20 @@ const App = () => {
                       {selectedFile ? selectedFile.name : 'Drop your WhatsApp chat file here or click to browse'}
                     </span>
                   </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="aiSummariesCheckbox"
+                    checked={createAiSummaries}
+                    onChange={(e) => setCreateAiSummaries(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                  />
+                  <label htmlFor="aiSummariesCheckbox" className="text-gray-700 text-sm">
+                    For part of our analysis, some chat segments will be sent to OpenAI.
+                    If you'd like to skip this, check this box.
+                  </label>
+                </div>
+
                   {selectedFile && (
                     <button
                       onClick={handleFileUpload}
