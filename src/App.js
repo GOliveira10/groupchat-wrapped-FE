@@ -29,6 +29,7 @@ ChartJS.register(
 
 const analysisApiUrl = 'https://groupchat-wrapped-analysis.fly.dev';
 
+
 // ScrollIndicator component
 const ScrollIndicator = ({ showIndicator }) => {
   if (!showIndicator) return null;
@@ -519,25 +520,65 @@ const AnimatedChart = ({ chart, isVisible, index }) => {
   );
 };
 
-const DaySummariesGrid = ({ summaries, isVisible }) => {
+const DayChatLogsDrawer = ({ isOpen, logs, onClose }) => {
+  return (
+    <div
+      className={`fixed top-0 right-0 h-full bg-white shadow-xl transform transition-transform ${
+        isOpen ? 'translate-x-0' : 'translate-x-full'
+      }`}
+      style={{ width: '33.3333%', maxWidth: '400px' }} // 1/3 page or up to 400px
+    >
+      {/* Close button + Title */}
+      <div className="flex justify-between items-center p-4 border-b bg-gray-50">
+        <h2 className="text-lg font-bold">Chat Logs</h2>
+        <button 
+          className="text-gray-600 hover:text-gray-800"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Log listing */}
+      <div className="p-4 overflow-y-auto h-full">
+        {isValidArray(logs) ? (
+          logs.map((msg, idx) => (
+            <div key={idx} className="mb-4">
+              <div className="text-sm text-gray-600">
+                <strong>{msg.sender}</strong> <em>{msg.date}</em>
+              </div>
+              <div>{msg.message}</div>
+            </div>
+          ))
+        ) : (
+          <p className="text-gray-500">No chat logs found for this day.</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DaySummariesGrid = ({ summaries, isVisible, onDayClick }) => {
   if (!summaries || summaries.length === 0) return null;
   
   return (
     <div className={`transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20'}`}>
       <div className="relative bg-white/50 backdrop-blur-sm shadow-xl w-full max-w-6xl mx-auto rounded-xl p-8">
         <div id="summaries-grid">
-          <h2 className="text-2xl font-bold mb-6 text-center">Notable Days</h2>
+          <h2 className="text-2xl font-bold mb-1 text-center">Notable Days</h2>
+          <p className="text-base text-gray-600 text-center mb-2">
+            Click on a day to relive the chat
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {summaries.map((summary, index) => (
               <div 
                 key={index}
-                className="bg-white/70 backdrop-blur-sm rounded-lg shadow-md p-6"
+                className="bg-white/70 backdrop-blur-sm rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition"
+                onClick={() => onDayClick(index)} // pass the index up
               >
                 <h3 className="text-xl font-semibold mb-4">{summary.title}</h3>
                 <div className="text-gray-700 leading-relaxed">
-                  {typeof summary.summary === 'object' 
-                    ? JSON.stringify(summary.summary, null, 2) 
-                    : summary.summary}
+                  {summary.summary}
                 </div>
                 <div className="text-right mt-4">
                   <span className="text-gray-400 text-sm">Get your Groupchat Wrapped @ wrapped.chat</span>
@@ -691,22 +732,24 @@ const buildChartDataSets = (analysisData) => {
     }
 
    
-  // Top 3 days summaries
+    // Top 3 days summaries
 
     if (analysisData.top_ten_days?.day_summaries && 
       Array.isArray(analysisData.top_ten_days.day_summaries)) {
-    const summaries = analysisData.top_ten_days.day_summaries.map(dayData => ({
-      title: String(dayData.date || ''),
-      summary: String(dayData.content.summary || '')
-    })).filter(summary => summary.title && summary.summary); // Filter out any empty summaries
-    
-    if (summaries.length > 0) {
-      chartDataSets.push({
-        type: "SummaryGrid",
-        summaries: summaries
-      });
+      const summaries = analysisData.top_ten_days.day_summaries.map(dayData => ({
+        title: String(dayData.date || ''),
+        summary: String(dayData.content.summary || ''),
+        // If each dayData includes chat_logs, you could store them here:
+        chat_logs: dayData.chat_logs || [] 
+      })).filter(summary => summary.title && summary.summary);
+      
+      if (summaries.length > 0) {
+        chartDataSets.push({
+          type: "SummaryGrid",
+          summaries: summaries
+        });
+      }
     }
-  }
 
 
     // Manic Data Chart
@@ -845,6 +888,9 @@ const App = () => {
   const [isScrolling, setIsScrolling] = useState(false);
   const [error, setError] = useState(null);
 
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [dayLogs, setDayLogs] = useState([]);
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       console.log('File selected:', e.target.files[0].name);
@@ -947,6 +993,29 @@ const App = () => {
       setPhase('error');
     }
   };
+
+  const handleDaySummaryClick = (dayIndex) => {
+    // Grab the Summaries item from analysisData
+    const chartDataSets = buildChartDataSets(analysisData) || [];
+    const summaryItem = chartDataSets.find(c => c.type === 'SummaryGrid');
+    if (!summaryItem || !summaryItem.summaries[dayIndex]) return;
+  
+    // Access chat_logs for that day
+    const logsForDay = summaryItem.summaries[dayIndex].chat_logs || [];
+    console.log('Opening drawer with logs:', logsForDay);
+  
+    setDayLogs(logsForDay);
+    setDrawerOpen(true);
+  };
+  
+  // Then render the side drawer
+  <DayChatLogsDrawer
+    isOpen={drawerOpen}
+    logs={dayLogs}
+    onClose={() => setDrawerOpen(false)}
+  />;
+
+  
 
   const handleScroll = (e) => {
     if (isScrolling || !analysisData) return;
@@ -1062,6 +1131,7 @@ const App = () => {
   }
 
   if (phase === 'visualize') {
+    // Build out the chart items (Bar charts, Line charts, SummaryGrid, etc.)
     const chartDataSets = buildChartDataSets(analysisData);
     if (!chartDataSets || chartDataSets.length === 0) {
       return (
@@ -1085,46 +1155,83 @@ const App = () => {
         </div>
       );
     }
-
+  
+    // Safeguard the index of whichever chart or item is in view
     const safeCurrentIndex = Math.max(0, Math.min(currentChartIndex, chartDataSets.length - 1));
+    // The current chart or summary in the sequence
     const currentItem = chartDataSets[safeCurrentIndex];
+    // Whether to show the "scroll down" indicator
     const showScrollIndicator = safeCurrentIndex < chartDataSets.length - 1;
-
+  
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-8" onWheel={handleScroll}>
-        <div className="fixed top-4 left-4 bg-white/80 backdrop-blur-sm rounded-lg p-2 shadow">
-          <label htmlFor="yearDropdown" className="block text-sm font-medium text-gray-700">
-            Select Year:
-          </label>
-          <select
-            id="yearDropdown"
-            value={selectedYear}
-            onChange={(e) => handleYearChange(e.target.value)}
-            className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-          >
-            {availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
+      <>
+        {/* Main content container */}
+        <div
+          className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-8"
+          onWheel={handleScroll}
+        >
+          {/* Year dropdown (top-left) */}
+          <div className="fixed top-4 left-4 bg-white/80 backdrop-blur-sm rounded-lg p-2 shadow">
+            <label htmlFor="yearDropdown" className="block text-sm font-medium text-gray-700">
+              Select Year:
+            </label>
+            <select
+              id="yearDropdown"
+              value={selectedYear}
+              onChange={(e) => handleYearChange(e.target.value)}
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm 
+                         focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+  
+          {/* "X of Y" chart indicator (top-right) */}
+          <div className="fixed top-4 right-4 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 text-sm text-gray-600">
+            {safeCurrentIndex + 1} of {chartDataSets.length}
+          </div>
+  
+          {/* The main area where we display the current chart or summary */}
+          <div className="w-full">
+            {/* We switch on item type: 'SummaryGrid', 'Bar'/'Line' chart, 'TextSummaryCard', etc. */}
+            {currentItem && (
+              currentItem.type === 'SummaryGrid' ? (
+                <DaySummariesGrid 
+                  summaries={currentItem.summaries} 
+                  isVisible 
+                  onDayClick={handleDaySummaryClick}    // <--- IMPORTANT for drawer
+                />
+              ) : currentItem.data ? (
+                <AnimatedChart 
+                  chart={currentItem} 
+                  isVisible 
+                  index={safeCurrentIndex} 
+                />
+              ) : currentItem.type === 'TextSummaryCard' ? (
+                <TextSummaryCard 
+                  title={currentItem.title} 
+                  summary={currentItem.summary} 
+                  isVisible 
+                />
+              ) : null
+            )}
+          </div>
+  
+          {/* "Scroll Down" indicator on the right, if more charts remain */}
+          {showScrollIndicator && <ScrollIndicator showIndicator />}
         </div>
-        <div className="fixed top-4 right-4 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 text-sm text-gray-600">
-          {safeCurrentIndex + 1} of {chartDataSets.length}
-        </div>
-        <div className="w-full">
-          {currentItem && (
-            currentItem.type === 'SummaryGrid' ? (
-              <DaySummariesGrid summaries={currentItem.summaries} isVisible />
-            ) : currentItem.data ? (
-              <AnimatedChart chart={currentItem} isVisible index={safeCurrentIndex} />
-            ) : currentItem.type === 'TextSummaryCard' ? (
-              <TextSummaryCard title={currentItem.title} summary={currentItem.summary} isVisible />
-            ) : null
-          )}
-        </div>
-        {showScrollIndicator && <ScrollIndicator showIndicator />}
-      </div>
+  
+        {/* The side drawer for day logs (placed outside the .min-h-screen container) */}
+        <DayChatLogsDrawer
+          isOpen={drawerOpen}
+          logs={dayLogs}
+          onClose={() => setDrawerOpen(false)}
+        />
+      </>
     );
   }
 
