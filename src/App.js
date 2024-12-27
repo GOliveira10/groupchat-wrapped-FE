@@ -1104,8 +1104,8 @@ const App = () => {
                     className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                   />
                   <label htmlFor="aiSummariesCheckbox" className="text-gray-700 text-sm">
-                    For part of our analysis, some chat segments will be sent to OpenAI.
-                    If you'd like to skip this, check this box.
+                    For part of our analysis, some chat segments will be sent to OpenAI. Names within the transcripts will be anonymized before sending to OpenAI (if you want to see how this works, <a href = 'https://github.com/GOliveira10/groupchat-wrapped-analysis/blob/main/plumber.R'> click here to check the code.) </a>
+                    If you'd still like to skip this part, check the box.
                   </label>
                 </div>
 
